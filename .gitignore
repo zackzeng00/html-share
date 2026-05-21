@@ -1,0 +1,4 @@
+# 本地配置/临时文件，不入库
+.html-share.env
+.DS_Store
+*.tmp
