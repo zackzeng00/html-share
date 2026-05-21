@@ -94,8 +94,13 @@ ok "wrangler：$(wrangler --version 2>/dev/null | head -1)"
 
 # ---- 4. 登录 Cloudflare ----
 if ! wrangler whoami >/dev/null 2>&1; then
-  say "登录 Cloudflare（会弹出浏览器，点 Allow 授权，完成后回到这里）..."
-  warn "还没有 Cloudflare 账号？先去 https://dash.cloudflare.com/sign-up 免费注册，并在左侧开通 R2（首次需绑卡验证，免费额度内不扣费）。"
+  echo
+  warn "下面要登录 Cloudflare。前提：你已经有账号、并且开通了 R2。"
+  warn "  · 还没账号  → 先去 https://dash.cloudflare.com/sign-up 免费注册"
+  warn "  · 注册之后  → 在控制台左侧点「R2」开通（首次绑卡验证，免费额度内不扣费）"
+  ans="$(ask "都弄好了吗？回车开始登录（会弹浏览器，点 Allow）；输 n 先退出: " "y")"
+  [[ "$ans" =~ ^[Nn] ]] && die "好，注册账号 + 开通 R2 之后再重跑本脚本。"
+  say "登录中（浏览器里点 Allow 授权，完成后回到这里）..."
   wrangler login || die "登录失败，重跑本脚本再试"
 fi
 ok "已登录：$(wrangler whoami 2>/dev/null | grep -ioE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+' | head -1 || echo Cloudflare)"
@@ -106,8 +111,16 @@ BUCKET="$(ask "给你的桶起个名（只用小写字母/数字/连字符）[�
 BUCKET="$(echo "$BUCKET" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//')"
 [[ -z "$BUCKET" ]] && BUCKET="$DEFAULT_BUCKET"
 
-say "建桶 $BUCKET（已存在则跳过）..."
-wrangler r2 bucket create "$BUCKET" >/dev/null 2>&1 || warn "桶可能已存在，继续。"
+say "建桶 $BUCKET（已存在则复用）..."
+if ! wrangler r2 bucket create "$BUCKET" >/dev/null 2>&1; then
+  if wrangler r2 bucket info "$BUCKET" >/dev/null 2>&1; then
+    warn "桶已存在，复用。"
+  else
+    warn "建桶失败 —— 最常见原因：R2 还没开通。"
+    warn "去 https://dash.cloudflare.com/ 左侧点「R2」开通（首次绑卡验证，免费额度内不扣费），然后重跑本脚本。"
+    die "缺 R2，先开通再来。"
+  fi
+fi
 say "开启公开访问..."
 wrangler r2 bucket dev-url enable "$BUCKET" -y >/dev/null 2>&1 || warn "开启公开访问时有提示，继续。"
 
