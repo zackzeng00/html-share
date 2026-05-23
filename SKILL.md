@@ -36,28 +36,48 @@ description: 把 Markdown / HTML 一键发布成公开链接（托管在 Cloudfl
 ## 二、发布流程（把文件变成链接）
 
 ```bash
-"<技能目录>/publish.sh" <文件.md 或 文件.html> [--slug 可读名] [--title 页面标题]
+"<技能目录>/publish.sh" <文件.md / 文件.html / 目录> [--slug 可读名] [--title 页面标题]
 ```
 
 - `.md` → 自动用 pandoc 转成自包含 html 再发布
 - `.html` → 原样发布
+- **目录** → 整个文件夹发布（保留相对路径），见下方"多页站点"
 - 成功后打印 `https://…/<slug>-<随机码>.html` 并复制到剪贴板
 - `--slug` 给链接一个可读名字；不传则用文件名（纯中文名会退化为 `doc`）
 - 随机码保证不覆盖，旧链接长期有效
 
-**发布前的自包含检查**（仅对 `.html` 输入；md 由 pandoc 自动内联）：
+**发布前的自包含检查**（仅对**单个** `.html` 输入；md 由 pandoc 自动内联）：
 
 ```bash
 grep -oiE '(href|src)="[^"]+"' <文件.html> | grep -viE 'https?://|data:|^#|mailto:'
 ```
 
 - 无输出（无外部相对引用）→ 直接发布
-- 有输出 → 先按"生成标准"重写成单文件自包含，再发布
+- 有输出（依赖相对 css/js/图片）→ 二选一：
+  1. 按"生成标准"重写成单文件自包含再发（单页首选，微信兼容性最好）
+  2. 整个目录一起发（多页站点首选，见下）
+
+**多页站点 / 目录发布**：当确实是拆分的 css/js、互链的多个 html 时，直接把目录传给脚本：
+
+```bash
+"<技能目录>/publish.sh" <站点目录/> [--slug 可读名]
+```
+
+- 目录里**必须有 `index.html`** 作为入口（脚本会校验，没有则报错退出）
+- 保留相对路径上传到 `<slug>-<随机码>/` 下，逐文件按扩展名设 content-type（html/css/js/json/svg/png/jpg/webp/woff2…，自动跳过 `.DS_Store`）
+- 返回并复制 `…/<slug>-<随机码>/index.html` 链接；同源相对路径，微信内置浏览器能正常加载各页
+- 每次发布是一份新快照（新随机码目录），改了内容要重发，旧链接仍指向旧快照
 
 **发布后验证**（不要只信脚本回显）：
 
 ```bash
 curl -sI "<返回的URL>" | grep -iE 'HTTP/|content-type'   # 期望 200 + text/html
+```
+
+目录发布时再抽查一个 css/js 子资源（期望 200 + 正确 content-type），确认整站能加载：
+
+```bash
+curl -sI "<…/slug-rand>/style.css" | grep -iE 'HTTP/|content-type'
 ```
 
 最后把链接原样回给用户。

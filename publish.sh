@@ -5,6 +5,7 @@
 # 用法:
 #   pub 报告.md                  # md 自动转成好看的独立网页再发布
 #   pub page.html                # html 原样发布
+#   pub 站点目录/                 # 整个文件夹发布（保留相对路径，需含 index.html，返回 index 链接）
 #   pub 报告.md --slug q3-report  # 自定义链接里的可读名字
 #   pub 报告.md --title "Q3 财报"  # 覆盖 md 转 html 的页面标题
 #
@@ -30,12 +31,21 @@ if [[ -z "$BUCKET" || -z "$PUBLIC_PREFIX" ]]; then
   1) 跑一遍安装脚本（推荐）：
        "$SCRIPT_DIR/install.sh"
 
-  2) 手动创建 $CONF，写入两行：
+  2) 手动创建 ${CONF}，写入两行：
        BUCKET="你的桶名"
        PUBLIC_PREFIX="https://pub-xxxxxxxx.r2.dev"
 EOF
   exit 1
 fi
+
+# ---- 复制到剪贴板（自动适配 Mac / Windows(Git Bash) / Linux）----
+clip_copy() {
+  if   command -v pbcopy  >/dev/null; then printf '%s' "$1" | pbcopy
+  elif command -v clip    >/dev/null; then printf '%s' "$1" | clip
+  elif command -v xclip   >/dev/null; then printf '%s' "$1" | xclip -selection clipboard
+  elif command -v wl-copy >/dev/null; then printf '%s' "$1" | wl-copy
+  else return 1; fi
+}
 
 # ---- 解析参数 ----
 FILE=""; SLUG=""; TITLE=""
@@ -43,15 +53,65 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --slug)  SLUG="${2:-}"; shift 2 ;;
     --title) TITLE="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '5,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '5,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "未知参数: $1" >&2; exit 1 ;;
     *) FILE="$1"; shift ;;
   esac
 done
 
-[[ -z "$FILE" ]] && { echo "用法: pub 文件.md/.html [--slug 名字] [--title 标题]"; exit 1; }
-[[ -f "$FILE" ]] || { echo "文件不存在: $FILE" >&2; exit 1; }
+[[ -z "$FILE" ]] && { echo "用法: pub 文件.md/.html 或 目录/ [--slug 名字] [--title 标题]"; exit 1; }
+[[ -e "$FILE" ]] || { echo "路径不存在: $FILE" >&2; exit 1; }
 command -v wrangler >/dev/null || { echo "没装 wrangler，先跑 install.sh，或：npm install -g wrangler" >&2; exit 1; }
+
+# ===== 文件夹发布模式：传入目录则保留相对路径整目录上传，返回 index.html 链接 =====
+if [[ -d "$FILE" ]]; then
+  DIR="${FILE%/}"
+  [[ -f "$DIR/index.html" ]] || { echo "❌ 文件夹里没有 index.html，无法作为入口" >&2; exit 1; }
+  slug="$(echo "${SLUG:-$(basename "$DIR")}" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  [[ -z "$slug" ]] && slug="site"
+  rand="$(openssl rand -hex 3 2>/dev/null || printf '%06x' $((RANDOM*RANDOM)))"
+  folder="${slug}-${rand}"
+
+  echo "文件夹发布：$DIR → ${BUCKET}/${folder}/ ..."
+  cnt=0; failed=0
+  while IFS= read -r -d '' f; do
+    rel="${f#"$DIR"/}"
+    fext="$(echo "${f##*.}" | tr 'A-Z' 'a-z')"
+    case "$fext" in
+      html|htm) ct="text/html; charset=utf-8" ;;
+      css)      ct="text/css; charset=utf-8" ;;
+      js|mjs)   ct="application/javascript; charset=utf-8" ;;
+      json)     ct="application/json; charset=utf-8" ;;
+      svg)      ct="image/svg+xml" ;;
+      png)      ct="image/png" ;;
+      jpg|jpeg) ct="image/jpeg" ;;
+      gif)      ct="image/gif" ;;
+      webp)     ct="image/webp" ;;
+      ico)      ct="image/x-icon" ;;
+      woff2)    ct="font/woff2" ;;
+      woff)     ct="font/woff" ;;
+      ttf)      ct="font/ttf" ;;
+      txt|md)   ct="text/plain; charset=utf-8" ;;
+      *)        ct="application/octet-stream" ;;
+    esac
+    if wrangler r2 object put "${BUCKET}/${folder}/${rel}" --file "$f" \
+         --content-type "$ct" --cache-control "public, max-age=3600" --remote >/dev/null 2>&1; then
+      printf '  ✓ %s  [%s]\n' "$rel" "$ct"; cnt=$((cnt+1))
+    else
+      printf '  ✗ %s 上传失败\n' "$rel" >&2; failed=$((failed+1))
+    fi
+  done < <(find "$DIR" -type f ! -name '.DS_Store' -print0)
+
+  [[ $failed -gt 0 ]] && { echo "❌ 有 $failed 个文件上传失败，请重试" >&2; exit 1; }
+  url="${PUBLIC_PREFIX%/}/${folder}/index.html"
+  clip_copy "$url" && copied="（已复制到剪贴板）" || copied="（手动复制下面这条）"
+  echo ""
+  echo "✅ 文件夹发布成功，共 $cnt 个文件 ${copied}"
+  echo "   $url"
+  exit 0
+fi
+
+[[ -f "$FILE" ]] || { echo "文件不存在: $FILE" >&2; exit 1; }
 
 ext="$(echo "${FILE##*.}" | tr 'A-Z' 'a-z')"
 base="$(basename "$FILE")"; base="${base%.*}"
@@ -103,13 +163,8 @@ fi
 
 url="${PUBLIC_PREFIX%/}/${key}"
 
-# ---- 复制到剪贴板（自动适配 Mac / Windows(Git Bash) / Linux）----
-copied="（已复制到剪贴板）"
-if   command -v pbcopy  >/dev/null; then printf '%s' "$url" | pbcopy
-elif command -v clip    >/dev/null; then printf '%s' "$url" | clip
-elif command -v xclip   >/dev/null; then printf '%s' "$url" | xclip -selection clipboard
-elif command -v wl-copy >/dev/null; then printf '%s' "$url" | wl-copy
-else copied="（手动复制下面这条）"; fi
+# ---- 复制到剪贴板 ----
+clip_copy "$url" && copied="（已复制到剪贴板）" || copied="（手动复制下面这条）"
 
 echo ""
 echo "✅ 发布成功 ${copied}"

@@ -31,10 +31,12 @@ Markdown / HTML 在微信、飞书聊天框里打不开、复制过去糊成一�
 ```bash
 ./publish.sh 文件.md            # 或 pub 文件.md（安装脚本已设别名）
 ./publish.sh 文件.html
+./publish.sh 站点目录/           # 多页站点：整个文件夹发布（需含 index.html）
 ./publish.sh 报告.md --slug q3-report   # 自定义链接里的可读名
 ```
 
 - `.md` 自动用 pandoc 转成自包含 html 再发布；`.html` 原样发布。
+- **目录** 整个文件夹按相对路径上传、逐文件设 content-type、返回 `index.html` 链接——多页站点 / 拆分 css/js 时用这个，不必硬塞进单文件。
 - 成功后打印链接并复制到剪贴板；把链接原样回给用户，让他发微信。
 
 ## 三、发布 HTML 前务必检查自包含
@@ -45,11 +47,12 @@ Markdown / HTML 在微信、飞书聊天框里打不开、复制过去糊成一�
 grep -oiE '(href|src)="[^"]+"' 文件.html | grep -viE 'https?://|data:|^#|mailto:'
 ```
 
-有输出 → 先把 CSS/JS 内联、图片转 base64 `data:` URI，重写成单文件，再发布。
+有输出 → 二选一：① 把 CSS/JS 内联、图片转 base64 重写成单文件再发；② 多页站点就把整个目录发布（`./publish.sh 目录/`，需含 `index.html`），保留相对路径。
 
 ## 四、你自己生成要分享的 HTML 时
 
-务必单文件自包含：CSS 进 `<style>`、JS 进 `<script>`、图片用 base64；**零外部 CDN**（微信内置浏览器常拦截）；字体用系统栈；带 `viewport` meta；窄屏可读。验收：断网双击能正常打开。
+单页：务必单文件自包含——CSS 进 `<style>`、JS 进 `<script>`、图片用 base64；**零外部 CDN**（微信内置浏览器常拦截）；字体用系统栈；带 `viewport` meta；窄屏可读。验收：断网双击能正常打开。
+多页站点（拆分 css/js、互链多个 html）：可不必硬合成单文件，直接 `./publish.sh 目录/` 整目录发布（入口须为 `index.html`）。**零外部 CDN 仍是硬约束**。
 
 ## 五、发布后验证（别只信回显）
 
