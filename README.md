@@ -57,6 +57,7 @@ git clone https://github.com/zackzeng00/html-share && cd html-share
 ```bash
 pub 报告.md                  # md 自动转成好看的独立网页再发布
 pub page.html                # html 原样发布
+pub 站点目录/                 # 整个文件夹发布（多页站点，需含 index.html，返回 index 链接）
 pub 报告.md --slug q3-report  # 自定义链接里的可读名字
 pub 报告.md --title "Q3 财报"  # 覆盖 md 转 html 的网页标题
 ```
@@ -67,7 +68,8 @@ pub 报告.md --title "Q3 财报"  # 覆盖 md 转 html 的网页标题
 
 - **md** → 用 pandoc `--embed-resources` 转成**全内联、自包含**的 html（CSS 直接嵌进文件，不依赖任何外部 CDN）。这点对微信很关键：微信内置浏览器加载外部 JS/CSS 常被拦，自包含才能完整渲染。
 - **html** → 原样上传。
-- 上传到 Cloudflare R2，对象名形如 `<可读名>-<随机码>.html`——随机码保证不覆盖、**旧链接长期有效**。
+- **目录** → 整个文件夹按相对路径上传（拆分的 css/js、互链的多页 html、本地图片都保留），逐文件自动设 content-type，返回入口 `index.html` 的链接。适合多页站点 / 交互应用，不必硬塞进单文件。
+- 上传到 Cloudflare R2，对象名形如 `<可读名>-<随机码>.html`（目录则放在 `<可读名>-<随机码>/` 下）——随机码保证不覆盖、**旧链接长期有效**。
 
 ## 配置
 
